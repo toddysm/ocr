@@ -10,6 +10,8 @@ import configparser
 import time
 import requests
 import json
+import pandas as pd
+from io import StringIO
 
 _url = 'https://api.projectoxford.ai/vision/v1.0/ocr'
 _maxNumRetries = 10
@@ -20,10 +22,15 @@ def main():
     parser = configparser.ConfigParser()
     parser.read('config.ini')
     
-   # access to blob storage
+    # access to blob storage
     block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME_2'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY_2'))
     generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME_2'))
    
+    # empty dataframe
+    df = pd.DataFrame({'Text' : [], 'Category' : [], 'ReceiptID' : []})
+    
+    # index
+    index = 0
     for blob in generator:
         print(blob.name)
 #        if blob.name == 'receipt_00000.JPG': # just for testing, save allowance, remove this later
@@ -38,21 +45,40 @@ def main():
         headers['Ocp-Apim-Subscription-Key'] = parser.get('credential', 'VISION_API_KEY') 
         headers['Content-Type'] = 'application/json' 
         
-        json_url = { 'url': imageurl } ; 
-        data = None
-        print("----------------")
-        result = processRequest( json_url, data, headers, params )
+        image_url = { 'url': imageurl } ; 
+        image_file = None
+        result = processRequest( image_url, image_file, headers, params )
         
         if result is not None:
             #print(result)
-            result_str = json.dumps(result)
-            #print(result_str)
+            result_str = json.dumps(result); #print(result_str)
+            
+            # write result into blob
             ocrblobname = blob.name[:-3] + 'json'
             block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_3'), ocrblobname, result_str)
 
-            text = extractText(result); print (text)
+            # extract text
+            text = extractText(result); #print (text)
             
-            TODO: put text, filename, label into data frame. Write to blob
+            # populate dataframe
+            df.loc[index,'Text'] = text
+        else:
+            # populate dataframe
+            df.loc[index,'Text'] = None
+                        
+        df.loc[index,'Category'] = 'catogory' ## !! need to get this from excel file
+        df.loc[index,'ReceiptID'] = blob.name
+ 
+        index = index + 1
+            
+    # write dataframe to blob
+    print("-----------------------")
+    df_str = df.to_csv(sep='\t', index=False); 
+    
+    # NEED THIS LATER TO READ INTO DATAFRAME
+    #df_read = pd.DataFrame.from_csv(StringIO(df_str), index_col=None, sep='\t'); 
+    dfblobname = 'dataframe.tsv' ## !! need to turn to string?
+    block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_4'), dfblobname, df_str) # !! Might have problem
 
     return
     
@@ -65,7 +91,7 @@ def extractText(result):
                 text = text + " " + word.get('text')
     return text
     
-def processRequest( json_url, data, headers, params ):
+def processRequest( image_url, image_file, headers, params ):
 
     """
     Ref: https://github.com/Microsoft/Cognitive-Vision-Python/blob/master/Jupyter%20Notebook/Computer%20Vision%20API%20Example.ipynb
@@ -81,7 +107,7 @@ def processRequest( json_url, data, headers, params ):
 
     while True:
 
-        response = requests.request( 'post', _url, json = json_url, data = data, headers = headers, params = params )
+        response = requests.request( 'post', _url, json = image_url, data = image_file, headers = headers, params = params )
         
         if response.status_code == 429: 
 
