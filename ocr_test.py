@@ -89,7 +89,7 @@ def main():
     print("-----------------------")
     df_str = df.to_csv(sep='\t', index=False); 
     
-    dfblobname = 'dataframe.tsv' ## !! need to turn to string?
+    dfblobname = 'dataframe.tsv' 
     block_blob_service.create_blob_from_text(CONTAINER_NAME_STRUCTUREDDATA, dfblobname, df_str) 
 
     return
