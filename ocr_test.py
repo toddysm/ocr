@@ -4,31 +4,39 @@ Created on Wed Nov  2 10:28:18 2016
 @author: chyam
 purpose: load images from blob storage, post to Microsoft OCR, save results, populate 'text' to .tsv file.
 """
-### TODO: Settings to "Container" to allow public access
+### TODO: 
+### 1.Settings to "Container" to allow public access
+
 from __future__ import print_function
 from azure.storage.blob import BlockBlobService
+from azure.storage.blob import PublicAccess
 import configparser
 import time
 import requests
 import json
 import pandas as pd
-import sys
+
 #from io import StringIO
 
 _url = 'https://api.projectoxford.ai/vision/v1.0/ocr'
 _maxNumRetries = 10
 
 def main():
+    
     # Get credential
-
     parser = configparser.ConfigParser()
     parser.read('config.ini')
-    
+    STORAGE_ACCOUNT_NAME = parser.get('credential', 'STORAGE_ACCOUNT_NAME')    
+    STORAGE_ACCOUNT_KEY = parser.get('credential', 'STORAGE_ACCOUNT_KEY')
+    CONTAINER_NAME = parser.get('credential', 'CONTAINER_NAME')
+    VISION_API_KEY = parser.get('credential', 'VISION_API_KEY_90') # need to use Agitare account
+    CONTAINER_NAME_OCR = parser.get('credential', 'CONTAINER_NAME_OCR')    
+    CONTAINER_NAME_STRUCTUREDDATA = parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA')
+
     # access to blob storage
-    #block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME_92'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY_2'))
-    #generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME_92'))
-    block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY'))
-    generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME'))
+    block_blob_service = BlockBlobService(account_name=STORAGE_ACCOUNT_NAME, account_key=STORAGE_ACCOUNT_KEY)
+    block_blob_service.set_container_acl(CONTAINER_NAME, public_access=PublicAccess.Container)
+    generator = block_blob_service.list_blobs(CONTAINER_NAME)
    
     # empty dataframe
     df = pd.DataFrame({'Text' : [], 'Category' : [], 'ReceiptID' : []})
@@ -36,18 +44,15 @@ def main():
     # index
     index = 0
     for blob in generator:
-        if index <= 2:
+        if index <= 1500:
             print(blob.name)
-    #        if blob.name == 'receipt_00000.JPG': # just for testing, save allowance, remove this later
-            #imageurl = "https://atstrdtmuswdmo.blob.core.windows.net:443/ml-hackaton-receipts" + "/" + blob.name; print(imageurl)
+            imageurl = "https://" + STORAGE_ACCOUNT_NAME + ".blob.core.windows.net/" + CONTAINER_NAME + "/" + blob.name; print(imageurl)
             
-            #imageurl = "https://" + parser.get('credential', 'STORAGE_ACCOUNT_NAME_92') + ".blob.core.windows.net/" + parser.get('credential', 'CONTAINER_NAME_92') + "/" + blob.name; print(imageurl)
-            imageurl = "https://" + parser.get('credential', 'STORAGE_ACCOUNT_NAME') + ".blob.core.windows.net/" + parser.get('credential', 'CONTAINER_NAME') + "/" + blob.name; print(imageurl)
             # OCR parameters
             params = { 'language': 'en', 'detectOrientation ': 'true'} 
             
             headers = dict()
-            headers['Ocp-Apim-Subscription-Key'] = parser.get('credential', 'VISION_API_KEY') 
+            headers['Ocp-Apim-Subscription-Key'] =  VISION_API_KEY
             headers['Content-Type'] = 'application/json' 
             
             image_url = { 'url': imageurl } ; 
@@ -60,8 +65,7 @@ def main():
                 
                 # write result into blob
                 ocrblobname = blob.name[:-3] + 'json'
-                #block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_93'), ocrblobname, result_str)
-                block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_OCR'), ocrblobname, result_str)
+                block_blob_service.create_blob_from_text(CONTAINER_NAME_OCR, ocrblobname, result_str)
                 # extract text
                 text = extractText(result); #print (text)
                 
@@ -75,18 +79,15 @@ def main():
             df.loc[index,'ReceiptID'] = blob.name
  
         else:
-            sys.exit()
+            break
         index = index + 1
             
     # write dataframe to blob
     print("-----------------------")
     df_str = df.to_csv(sep='\t', index=False); 
     
-    # NEED THIS LATER TO READ INTO DATAFRAME
-    #df_read = pd.DataFrame.from_csv(StringIO(df_str), index_col=None, sep='\t'); 
     dfblobname = 'dataframe.tsv' ## !! need to turn to string?
-    #block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_94'), dfblobname, df_str) # !! Might have problem
-    block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA'), dfblobname, df_str) # !! Might have problem
+    block_blob_service.create_blob_from_text(CONTAINER_NAME_STRUCTUREDDATA, dfblobname, df_str) 
 
     return
     

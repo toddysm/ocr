@@ -23,7 +23,7 @@ def main():
     parser.read('config.ini')
     
     # access to blob storage
-    block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME_92'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY_2'))
+    block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME_92'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY_92'))
     generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME_92'))
     #block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY'))
     #generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME'))
@@ -80,7 +80,7 @@ def main():
     # NEED THIS LATER TO READ INTO DATAFRAME
     #df_read = pd.DataFrame.from_csv(StringIO(df_str), index_col=None, sep='\t'); 
     dfblobname = 'dataframe.tsv' 
-    block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_94'), dfblobname, df_str) 
+    block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA_9'), dfblobname, df_str) 
     #block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA'), dfblobname, df_str) # !! Might have problem
 
     return
