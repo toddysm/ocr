@@ -4,84 +4,93 @@ Created on Wed Nov  2 10:28:18 2016
 @author: chyam
 purpose: load images from blob storage, post to Microsoft OCR, save results, populate 'text' to .tsv file.
 """
+### Error: UnicodeEncodeError: 'charmap' codec can't encode character
+###     Fixes: at windows console, type chcp 65001, press enter
+
 from __future__ import print_function
 from azure.storage.blob import BlockBlobService
+from azure.storage.blob import PublicAccess
 import configparser
 import time
 import requests
 import json
 import pandas as pd
-#from io import StringIO
+from io import StringIO
 
 _url = 'https://api.projectoxford.ai/vision/v1.0/ocr'
 _maxNumRetries = 10
 
 def main():
+    
     # Get credential
-
     parser = configparser.ConfigParser()
     parser.read('config.ini')
-    
+    STORAGE_ACCOUNT_NAME = parser.get('credential', 'STORAGE_ACCOUNT_NAME_9')    
+    STORAGE_ACCOUNT_KEY = parser.get('credential', 'STORAGE_ACCOUNT_KEY_9')
+    CONTAINER_NAME = parser.get('credential', 'CONTAINER_NAME_9')
+    VISION_API_KEY = parser.get('credential', 'VISION_API_KEY_9') # need to use Agitare account
+    CONTAINER_NAME_OCR = parser.get('credential', 'CONTAINER_NAME_OCR_9')    
+    CONTAINER_NAME_STRUCTUREDDATA = parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA_9')
+
     # access to blob storage
-    block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME_92'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY_92'))
-    generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME_92'))
-    #block_blob_service = BlockBlobService(account_name=parser.get('credential', 'STORAGE_ACCOUNT_NAME'), account_key=parser.get('credential', 'STORAGE_ACCOUNT_KEY'))
-    #generator = block_blob_service.list_blobs(parser.get('credential', 'CONTAINER_NAME'))
+    block_blob_service = BlockBlobService(account_name=STORAGE_ACCOUNT_NAME, account_key=STORAGE_ACCOUNT_KEY)
+    block_blob_service.set_container_acl(CONTAINER_NAME, public_access=PublicAccess.Container)
+    generator = block_blob_service.list_blobs(CONTAINER_NAME)
    
     # empty dataframe
     df = pd.DataFrame({'Text' : [], 'Category' : [], 'ReceiptID' : []})
     
+    # get label from file
+    blob_text = block_blob_service.get_blob_to_text(CONTAINER_NAME, 'receipts_list-utf8.csv');  #print(blob_text.content)
+    df_label = pd.DataFrame.from_csv(StringIO(blob_text.content), index_col=None, sep=','); #print(df_label.shape); print(df_label)
+    
     # index
     index = 0
     for blob in generator:
-        print(blob.name)
-#        if blob.name == 'receipt_00000.JPG': # just for testing, save allowance, remove this later
-        #imageurl = "https://atstrdtmuswdmo.blob.core.windows.net:443/ml-hackaton-receipts" + "/" + blob.name; print(imageurl)
-        
-        imageurl = "https://" + parser.get('credential', 'STORAGE_ACCOUNT_NAME_92') + ".blob.core.windows.net/" + parser.get('credential', 'CONTAINER_NAME_92') + "/" + blob.name; print(imageurl)
-        #imageurl = "https://" + parser.get('credential', 'STORAGE_ACCOUNT_NAME') + ".blob.core.windows.net/" + parser.get('credential', 'CONTAINER_NAME') + "/" + blob.name; print(imageurl)
-        # OCR parameters
-        params = { 'language': 'en', 'detectOrientation ': 'true'} 
-        
-        headers = dict()
-        headers['Ocp-Apim-Subscription-Key'] = parser.get('credential', 'VISION_API_KEY_90') 
-        headers['Content-Type'] = 'application/json' 
-        
-        image_url = { 'url': imageurl } ; 
-        image_file = None
-        result = processRequest( image_url, image_file, headers, params )
-        
-        if result is not None:
-            #print(result)
-            result_str = json.dumps(result); #print(result_str)
+        if index <= 2:
+            print(blob.name)
+            imageurl = "https://" + STORAGE_ACCOUNT_NAME + ".blob.core.windows.net/" + CONTAINER_NAME + "/" + blob.name; print(imageurl)
             
-            # write result into blob
-            ocrblobname = blob.name[:-3] + 'json'
-            block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_93'), ocrblobname, result_str)
-            #block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_OCR'), ocrblobname, result_str)
-            # extract text
-            text = extractText(result); #print (text)
+            # OCR parameters
+            params = { 'language': 'en', 'detectOrientation ': 'true'} 
             
-            # populate dataframe
-            df.loc[index,'Text'] = text
-        else:
-            # populate dataframe
-            df.loc[index,'Text'] = None
-                        
-        df.loc[index,'Category'] = 'catogory' ## !! need to get this from excel file
-        df.loc[index,'ReceiptID'] = blob.name
+            headers = dict()
+            headers['Ocp-Apim-Subscription-Key'] =  VISION_API_KEY
+            headers['Content-Type'] = 'application/json' 
+            
+            image_url = { 'url': imageurl } ; 
+            image_file = None
+            result = processRequest( image_url, image_file, headers, params )
+            
+            if result is not None:
+                #print(result)
+                result_str = json.dumps(result); #print(result_str)
+                
+                # write result into blob
+                ocrblobname = blob.name[:-3] + 'json'
+                block_blob_service.create_blob_from_text(CONTAINER_NAME_OCR, ocrblobname, result_str)
+                # extract text
+                text = extractText(result); #print (text)
+                
+                # populate dataframe
+                df.loc[index,'Text'] = text
+            else:
+                # populate dataframe
+                df.loc[index,'Text'] = None
+                            
+            df.loc[index,'Category'] = df_label.loc[index,'category']
+            df.loc[index,'ReceiptID'] = blob.name
  
+        else:
+            break
         index = index + 1
             
     # write dataframe to blob
     print("-----------------------")
     df_str = df.to_csv(sep='\t', index=False); 
     
-    # NEED THIS LATER TO READ INTO DATAFRAME
-    #df_read = pd.DataFrame.from_csv(StringIO(df_str), index_col=None, sep='\t'); 
-    dfblobname = 'dataframe.tsv' 
-    block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA_9'), dfblobname, df_str) 
-    #block_blob_service.create_blob_from_text(parser.get('credential', 'CONTAINER_NAME_STRUCTUREDDATA'), dfblobname, df_str) # !! Might have problem
+    dfblobname = 'dataframe.tsv' ## !! need to turn to string?
+    block_blob_service.create_blob_from_text(CONTAINER_NAME_STRUCTUREDDATA, dfblobname, df_str) 
 
     return
     

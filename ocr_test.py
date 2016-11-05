@@ -4,8 +4,8 @@ Created on Wed Nov  2 10:28:18 2016
 @author: chyam
 purpose: load images from blob storage, post to Microsoft OCR, save results, populate 'text' to .tsv file.
 """
-### TODO: 
-### 1.Settings to "Container" to allow public access
+### Error: UnicodeEncodeError: 'charmap' codec can't encode character
+###     Fixes: at windows console, type chcp 65001, press enter
 
 from __future__ import print_function
 from azure.storage.blob import BlockBlobService
@@ -15,8 +15,7 @@ import time
 import requests
 import json
 import pandas as pd
-
-#from io import StringIO
+from io import StringIO
 
 _url = 'https://api.projectoxford.ai/vision/v1.0/ocr'
 _maxNumRetries = 10
@@ -40,11 +39,15 @@ def main():
    
     # empty dataframe
     df = pd.DataFrame({'Text' : [], 'Category' : [], 'ReceiptID' : []})
+
+    # get label from file
+    blob_text = block_blob_service.get_blob_to_text(CONTAINER_NAME, 'receipts_list-utf8.csv');  #print(blob_text.content)
+    df_label = pd.DataFrame.from_csv(StringIO(blob_text.content), index_col=None, sep=','); #print(df_label.shape); print(df_label)
     
     # index
     index = 0
     for blob in generator:
-        if index <= 1500:
+        if index <= -1: #1500:
             print(blob.name)
             imageurl = "https://" + STORAGE_ACCOUNT_NAME + ".blob.core.windows.net/" + CONTAINER_NAME + "/" + blob.name; print(imageurl)
             
@@ -75,7 +78,7 @@ def main():
                 # populate dataframe
                 df.loc[index,'Text'] = None
                             
-            df.loc[index,'Category'] = 'catogory' ## !! need to get this from excel file
+            df.loc[index,'Category'] = df_label.loc[index,'category']
             df.loc[index,'ReceiptID'] = blob.name
  
         else:
